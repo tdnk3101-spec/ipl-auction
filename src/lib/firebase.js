@@ -1,0 +1,344 @@
+import { getApps, initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { getDatabase, ref, onValue, goOffline, goOnline } from "firebase/database";
+import {
+  AUCTION_SERVERS,
+  DEFAULT_AUCTION_SERVER,
+  getPreferredServer,
+  normalizeServer,
+} from "./auctionServers";
+
+const isValidHttpUrl = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  try {
+    const url = new URL(str);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const configuredDbUrl = (import.meta.env.VITE_FIREBASE_DATABASE_URL || '').trim();
+const rawDatabaseURL = isValidHttpUrl(configuredDbUrl)
+  ? configuredDbUrl
+  : 'https://ipl-acution-52760-default-rtdb.firebaseio.com';
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyD3Ism1OAPvXOlkZix0GrvA5ce0rYIqD-U',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'ipl-acution-52760.firebaseapp.com',
+  // Primary project: Auth, Firestore and the first Realtime Database.
+  databaseURL: rawDatabaseURL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'ipl-acution-52760',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'ipl-acution-52760.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '918680357420',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:918680357420:web:962962fd2e7daa8e7a5f89',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-Y9JJRNPGTE'
+};
+
+const app = initializeApp(firebaseConfig);
+
+export const auth = getAuth(app);
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+});
+// Defer Analytics until after first paint — removes it from the critical path
+let analytics = null;
+if (typeof window !== 'undefined' && import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) {
+  window.addEventListener('load', () => {
+    import('firebase/analytics').then(({ getAnalytics }) => {
+      try {
+        analytics = getAnalytics(app);
+      } catch {
+        // Analytics is optional in dev
+      }
+    });
+  }, { once: true });
+}
+export { analytics };
+
+// ─── Two RTDB backends ───
+// When a RTDB override URL is supplied for a server, we spin up a dedicated
+// Firebase app for it so the API key always matches the database project and
+// avoids the "invalid credentials" warning that occurs when a key from one
+// project is used against another project's database URL.
+
+const primaryDatabaseURL = (
+  import.meta.env.VITE_RTDB_A_URL || ''
+).trim();
+
+const secondaryDatabaseURL = (
+  import.meta.env.VITE_RTDB_B_URL ||
+  import.meta.env.VITE_FIREBASE_B_DATABASE_URL ||
+  ''
+).trim();
+
+const PRIMARY_APP_NAME   = 'ipl-auction-rtdb-primary';
+const SECONDARY_APP_NAME = 'ipl-auction-rtdb-secondary';
+
+function deriveProjectId(databaseURL) {
+  try {
+    const host = new URL(databaseURL).hostname;
+    return host.match(/^(.+?)-default-rtdb/)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+function createOverrideDatabase(databaseURL, appName, envPrefix) {
+  if (!isValidHttpUrl(databaseURL)) return null;
+  try {
+    const existing = getApps().find((candidate) => candidate.name === appName);
+    const overrideApp = existing || initializeApp(
+      Object.fromEntries(
+        Object.entries({
+          apiKey:            import.meta.env[`${envPrefix}_API_KEY`],
+          authDomain:        import.meta.env[`${envPrefix}_AUTH_DOMAIN`],
+          databaseURL,
+          projectId:
+            import.meta.env[`${envPrefix}_PROJECT_ID`] ||
+            deriveProjectId(databaseURL),
+          storageBucket:     import.meta.env[`${envPrefix}_STORAGE_BUCKET`],
+          messagingSenderId: import.meta.env[`${envPrefix}_MESSAGING_SENDER_ID`],
+          appId:             import.meta.env[`${envPrefix}_APP_ID`],
+        }).filter(([, value]) => Boolean(value)),
+      ),
+      appName,
+    );
+    return getDatabase(overrideApp, databaseURL);
+  } catch (error) {
+    console.error(`[firebase] Could not initialise override RTDB app "${appName}"`, error);
+    return null;
+  }
+}
+
+let primaryRtdb = null;
+try {
+  primaryRtdb = createOverrideDatabase(primaryDatabaseURL, PRIMARY_APP_NAME, 'VITE_RTDB_A');
+  if (!primaryRtdb && isValidHttpUrl(firebaseConfig.databaseURL)) {
+    primaryRtdb = getDatabase(app, firebaseConfig.databaseURL);
+  }
+} catch (error) {
+  console.warn('[firebase] Could not initialise primary RTDB', error);
+}
+
+const secondaryRtdb = createOverrideDatabase(secondaryDatabaseURL, SECONDARY_APP_NAME, 'VITE_RTDB_B');
+
+export const SECONDARY_SERVER_ENABLED = Boolean(secondaryRtdb);
+
+const SERVER_DATABASES = {
+  ...(primaryRtdb ? { [DEFAULT_AUCTION_SERVER]: primaryRtdb } : {}),
+  ...(secondaryRtdb ? { secondary: secondaryRtdb } : {}),
+};
+
+/** True when the server has a configured database. */
+export function isServerAvailable(server) {
+  const id = normalizeServer(server, null);
+  return Boolean(id && SERVER_DATABASES[id]);
+}
+
+/** Server metadata for the servers that are actually configured. */
+export function getAvailableServers() {
+  return AUCTION_SERVERS.filter((server) => isServerAvailable(server.id));
+}
+
+export function getRtdb(server = DEFAULT_AUCTION_SERVER) {
+  const id = normalizeServer(server);
+  return SERVER_DATABASES[id] || primaryRtdb;
+}
+
+let activeServer = (() => {
+  const preferred = getPreferredServer();
+  return isServerAvailable(preferred) ? preferred : DEFAULT_AUCTION_SERVER;
+})();
+
+/**
+ * Live binding consumed by the rest of the app. Importing `rtdb` as a named
+ * export means existing `ref(rtdb, ...)` calls automatically follow the active
+ * server without a mass refactor.
+ */
+export let rtdb = getRtdb(activeServer);
+
+export function getActiveServer() {
+  return activeServer;
+}
+
+// No database is connected while the user is browsing the landing page,
+// public lobby or history. Only room entry calls goOnlineServer().
+try {
+  if (primaryRtdb) goOffline(primaryRtdb);
+  if (secondaryRtdb) goOffline(secondaryRtdb);
+} catch {
+  // Offline mode is a courtesy; the SDK reconnects automatically when asked.
+}
+
+// ─── Per-server time sync ───
+const serverTimeOffsets = new Map();
+const serverTimeUnsubscribers = new Map();
+
+function startServerTimeSync(server) {
+  if (!isServerAvailable(server) || serverTimeUnsubscribers.has(server)) return;
+  try {
+    const offsetRef = ref(getRtdb(server), '.info/serverTimeOffset');
+    const unsubscribe = onValue(
+      offsetRef,
+      (snap) => {
+        serverTimeOffsets.set(server, snap.val() || 0);
+      },
+      () => {
+        // Keep the last known offset; a reconnect will refresh it.
+      },
+    );
+    serverTimeUnsubscribers.set(server, unsubscribe);
+  } catch {
+    // Local clock remains the fallback.
+  }
+}
+
+function stopServerTimeSync(server) {
+  const unsubscribe = serverTimeUnsubscribers.get(server);
+  if (!unsubscribe) return;
+  try {
+    unsubscribe();
+  } catch {
+    // Listener already gone.
+  }
+  serverTimeUnsubscribers.delete(server);
+}
+
+/**
+ * Switch the live binding and close the previous server's socket. This does not
+ * open the new socket; call goOnlineServer() when actually entering a room.
+ */
+export function setActiveServer(server) {
+  const next = normalizeServer(server, null);
+  if (!next || !isServerAvailable(next) || next === activeServer) return rtdb;
+
+  try {
+    goOffline(rtdb);
+  } catch {
+    // The old socket may already be closed.
+  }
+  stopServerTimeSync(activeServer);
+
+  activeServer = next;
+  rtdb = getRtdb(next);
+  return rtdb;
+}
+
+/** Switch to a server, connect, and start its time-offset listener. */
+export function goOnlineServer(server = activeServer) {
+  const next = normalizeServer(server);
+  if (!isServerAvailable(next)) {
+    throw new Error(`${next} auction server is not configured.`);
+  }
+  setActiveServer(next);
+  try {
+    goOnline(rtdb);
+  } catch {
+    // The connection watchdog reports a genuinely unusable socket.
+  }
+  startServerTimeSync(activeServer);
+  return rtdb;
+}
+
+/** Stop one server's socket and time listener without changing the binding. */
+export function goOfflineServer(server = activeServer) {
+  const id = normalizeServer(server);
+  if (!isServerAvailable(id)) return;
+  try {
+    goOffline(getRtdb(id));
+  } catch {
+    // Already offline.
+  }
+  stopServerTimeSync(id);
+}
+
+/**
+ * Resolve true once the database's socket is usable. A full database never
+ * reaches this point, which lets room creation fall back to the other server.
+ */
+export function waitForServerConnection(dbOrServer, timeoutMs = 6000) {
+  const database =
+    typeof dbOrServer === 'string' ? getRtdb(dbOrServer) : dbOrServer;
+
+  if (!database) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsubscribe = null;
+    let timer = null;
+
+    const finish = (connected) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (unsubscribe) {
+        try {
+          unsubscribe();
+        } catch {
+          // Listener already gone.
+        }
+      }
+      resolve(connected);
+    };
+
+    timer = setTimeout(() => finish(false), timeoutMs);
+
+    try {
+      const stop = onValue(
+        ref(database, '.info/connected'),
+        (snap) => {
+          if (snap.val() === true) finish(true);
+        },
+        () => finish(false),
+      );
+      unsubscribe = stop;
+      // A cached snapshot can arrive synchronously before `stop` is assigned.
+      if (settled) {
+        try {
+          stop();
+        } catch {
+          // Listener already gone.
+        }
+      }
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+/** Wait briefly for the active server's first clock-offset snapshot. */
+export function waitForServerTime(server = activeServer, timeoutMs = 1500) {
+  const id = normalizeServer(server);
+  if (serverTimeOffsets.has(id)) return Promise.resolve(serverTimeOffsets.get(id));
+  startServerTimeSync(id);
+
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      if (serverTimeOffsets.has(id)) {
+        clearInterval(timer);
+        resolve(serverTimeOffsets.get(id));
+      } else if (Date.now() - startedAt >= timeoutMs) {
+        clearInterval(timer);
+        resolve(0);
+      }
+    }, 50);
+  });
+}
+
+/**
+ * Returns the current server-authoritative time in milliseconds.
+ * Uses the active server's `.info/serverTimeOffset` for ms-accurate sync.
+ */
+export const getServerTime = (server = activeServer) =>
+  Date.now() + (serverTimeOffsets.get(normalizeServer(server)) || 0);
+
+/** Current offset in ms (for debugging). */
+export const getServerTimeOffset = (server = activeServer) =>
+  serverTimeOffsets.get(normalizeServer(server)) || 0;
+
+export default app;
