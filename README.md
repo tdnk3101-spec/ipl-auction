@@ -14,7 +14,7 @@
   Evaluate your drafted squad using the advanced Franchise Strength rating system.<br />
   Experience sub-second latency bidding backed by a sophisticated hybrid database architecture.
 
-  [Play Now](https://crickauction.in) • [Documentation](#documentation) • [Releases](https://github.com/Shaurya01836/ipl-auction/releases) • [Contributing](#develop-and-contribute)
+  [Play Now (Live Demo)](https://ipl-acution-52760.web.app) • [Documentation](#documentation) • [GitHub](https://github.com/tdnk3101-spec/ipl-auction) • [Contributing](#develop-and-contribute)
   <br />
   <br />
 </div>
@@ -73,7 +73,7 @@ Deploy or run the latest version of Crick Auction locally. No complex CLI is req
 
 1. **Clone and Install**
    ```bash
-   git clone https://github.com/Shaurya01836/ipl-auction.git
+   git clone https://github.com/tdnk3101-spec/ipl-auction.git
    cd ipl-auction
    npm install
    ```
