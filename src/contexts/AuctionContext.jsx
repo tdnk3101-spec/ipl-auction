@@ -54,6 +54,7 @@ import {
   upsertAuctionWithServer,
 } from '../lib/auctionServerDirectory';
 import { isHotspotRoomCode } from '../lib/roomCodes';
+import { computeMinNextBid, validateBidRequest } from '../lib/auctionValidation';
 import {
   createLocalRoom,
   joinLocalRoomDb as joinLocalRoomDbEngine,
@@ -1304,24 +1305,27 @@ export const AuctionProvider = ({ children }) => {
     if (currentAuction.bannedPlayers && currentAuction.bannedPlayers.includes(user.uid)) {
       throw new Error("You have been removed from this auction and cannot bid.");
     }
-    if (currentAuction.currentAuction?.status !== 'bidding') throw new Error("Auction is not accepting bids right now.");
-    if (currentAuction.currentAuction?.highBidderId === user.uid) throw new Error("You are already the highest bidder!");
 
-    // Squad limit check
-    const squadLimit = toFiniteNumber(currentAuction.squadLimit, 25);
-    if (team.squad && team.squad.length >= squadLimit) {
-      throw new Error(`You have reached the squad limit of ${squadLimit} players!`);
-    }
-
-    // Overseas limit check
     const player = IPL_PLAYERS.find(p => p.id === currentAuction.currentAuction?.playerId);
-    const isOverseas = player ? isOverseasPlayer(player) : false;
-    const overseasLimit = toFiniteNumber(currentAuction.overseasLimit, 8);
-    if (isOverseas && team.squad) {
-      const currentOverseasCount = countOverseas(team.squad, IPL_PLAYERS);
-      if (currentOverseasCount >= overseasLimit) {
-        throw new Error(`You have reached the overseas quota of ${overseasLimit} players for this mode!`);
-      }
+    const cBidSnapshot = toFiniteNumber(currentAuction.currentAuction?.currentBid, 0);
+    const nextBidSnapshot = computeMinNextBid(cBidSnapshot, player?.basePrice || 0.20);
+    const squadLimit = toFiniteNumber(currentAuction.squadLimit || currentAuction.settings?.squadLimit, 25);
+    const overseasLimit = toFiniteNumber(currentAuction.overseasLimit || currentAuction.settings?.overseasLimit, 8);
+
+    // Centralized validation pipeline (squad capacity, overseas quota, reserve purse floor, self-outbidding)
+    const validation = validateBidRequest({
+      bidAmount: nextBidSnapshot,
+      bidderId: user.uid,
+      bidderTeamId: team.teamId,
+      player,
+      auctionLiveState: currentAuction.currentAuction,
+      bidderTeamState: team,
+      squadLimit,
+      overseasLimit
+    });
+
+    if (!validation.isValid) {
+      throw new Error(validation.error);
     }
 
     if (currentAuction.server === 'local' || isHotspotRoomCode(currentAuction.id)) {
@@ -1334,20 +1338,7 @@ export const AuctionProvider = ({ children }) => {
       );
     }
 
-    // ── Bug Fix 1: Budget pre-flight check OUTSIDE the transaction ──
-    // The transaction update function is retried by Firebase on conflicts — using team.budgetRemaining
-    // inside it reads a stale React closure each retry, not the live DB value. We do the check here
-    // (from the most recent RTDB-synced team state) and rely on the server to enforce it atomically.
-    const cBidSnapshot = toFiniteNumber(currentAuction.currentAuction?.currentBid, 0);
-    const incSnapshot = cBidSnapshot < 5 ? 0.20 : 0.25;
-    const nextBidSnapshot = cBidSnapshot === 0
-      ? toFiniteNumber(player?.basePrice, 0)
-      : parseFloat((cBidSnapshot + incSnapshot).toFixed(2));
     const myBudget = toFiniteNumber(team.budgetRemaining, 0);
-    if (myBudget < nextBidSnapshot) {
-      throw new Error('Insufficient budget to place this bid.');
-    }
-
     const liveRef = ref(rtdb, `auctions/${currentAuction.id}/live`);
     const txResult = await runTransactionRtdb(liveRef, (currentData) => {
       if (!currentData) return currentData;
@@ -1361,18 +1352,18 @@ export const AuctionProvider = ({ children }) => {
       }
 
       const cBid = currentData.currentBid || 0;
-      const inc = cBid < 5 ? 0.20 : 0.25;
-      const nAmount = cBid === 0
-        ? (IPL_PLAYERS.find(p => p.id === currentData.playerId)?.basePrice || 0)
-        : parseFloat((cBid + inc).toFixed(2));
+      const nAmount = computeMinNextBid(cBid, player?.basePrice || 0.20);
 
-      // Guard: Abort retried transaction if updated bid exceeds user's budget
-      if (nAmount > myBudget) return;
+      // Guard: Abort retried transaction if updated bid exceeds user's budget or violates reserve floor
+      const minSlots = Math.max(0, squadLimit - ((team.squad || []).length) - 1);
+      const reqReserve = minSlots * 0.20;
+      if (nAmount > myBudget || (myBudget - nAmount) < reqReserve) return;
 
       currentData.currentBid = nAmount;
       currentData.highBidderId = user.uid;
       currentData.highBidderName = user.displayName || 'Manager';
       currentData.highBidderTeamId = team.teamId;
+      // Anti-sniping: extend timer to full countdown upon every authoritative bid
       currentData.timerEndsAt = now + (currentAuction.settings?.bidTimer || 10) * 1000;
 
       return currentData;

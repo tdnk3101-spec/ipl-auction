@@ -1,6 +1,42 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true
+    ".read": false,
+    ".write": false,
+    "auctions": {
+      "$roomId": {
+        ".read": "auth != null || data.child('room/isPublic').val() === true",
+        
+        "room": {
+          ".write": "auth != null && (!data.exists() && newData.child('hostId').val() === auth.uid || data.child('hostId').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['hostId', 'status', 'auctionType'])"
+        },
+        
+        "live": {
+          ".write": "auth != null && (root.child('auctions').child($roomId).child('room/hostId').val() === auth.uid || (data.child('status').val() === 'bidding' && newData.child('currentBid').isNumber() && (!data.child('currentBid').exists() || newData.child('currentBid').val() > data.child('currentBid').val()) && newData.child('highBidderId').val() === auth.uid))"
+        },
+
+        "playerOrder": {
+          ".write": "auth != null && root.child('auctions').child($roomId).child('room/hostId').val() === auth.uid"
+        },
+
+        "presence": {
+          "$userId": {
+            ".write": "auth != null && $userId === auth.uid"
+          }
+        },
+
+        "teams": {
+          "$teamDocId": {
+            ".write": "auth != null && (newData.child('userId').val() === auth.uid || data.child('userId').val() === auth.uid || root.child('auctions').child($roomId).child('room/hostId').val() === auth.uid)"
+          }
+        },
+
+        "messages": {
+          "$messageId": {
+            ".write": "auth != null && (!data.exists() && newData.child('userId').val() === auth.uid)"
+          }
+        }
+      }
+    }
   }
 }

@@ -7,7 +7,8 @@ import {
   GoogleAuthProvider,
   signOut,
   signInAnonymously,
-  updateProfile
+  updateProfile,
+  linkWithPopup
 } from 'firebase/auth';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -18,6 +19,8 @@ const AuthContext = createContext({
   loading: true,
   loginWithGoogle: async () => { },
   loginAsGuest: async () => { },
+  linkAccountWithGoogle: async () => { },
+  isOnlineVerified: false,
   logout: async () => { }
 });
 
@@ -138,11 +141,23 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const linkAccountWithGoogle = async () => {
+    if (!auth || !auth.currentUser) throw new Error('No user is currently signed in to link');
+    const result = await linkWithPopup(auth.currentUser, googleProvider);
+    sessionStorage.removeItem('ipl_local_guest');
+    setUser(result.user);
+    return result.user;
+  };
+
+  const isOnlineVerified = Boolean(user && !user.uid?.startsWith('guest_'));
+
   const value = {
     user,
     loading,
     loginWithGoogle,
     loginAsGuest,
+    linkAccountWithGoogle,
+    isOnlineVerified,
     logout
   };
 

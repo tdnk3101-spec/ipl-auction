@@ -41,7 +41,9 @@ import {
    Clock,
    LogOut,
    Eye,
-   Radio
+   Radio,
+   BarChart2,
+   Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -49,6 +51,8 @@ import { TEAMS } from '../data/teams';
 import TextChat from '../components/TextChat';
 import PageLoader from '../components/PageLoader';
 import ConfirmDialog from '../components/ConfirmDialog';
+import PlayerIntelligenceModal from '../components/PlayerIntelligenceModal';
+import FranchiseAnalyticsModal from '../components/FranchiseAnalyticsModal';
 import useRoomServer from '../hooks/useRoomServer';
 import { withServerParam } from '../lib/auctionServers';
 import { isHotspotRoomCode } from '../lib/roomCodes';
@@ -97,6 +101,8 @@ const AuctionRoom = () => {
    const [selectedTeamId, setSelectedTeamId] = useState(null);
    const [mobileTab, setMobileTab] = useState('arena'); // arena, squad, activity
    const [showSettings, setShowSettings] = useState(false);
+   const [showPlayerIntel, setShowPlayerIntel] = useState(false);
+   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
    const [showParticipantsOverlay, setShowParticipantsOverlay] = useState(false);
    const [showEndConfirm, setShowEndConfirm] = useState(false);
    const [isEnding, setIsEnding] = useState(false);
@@ -1049,6 +1055,13 @@ const AuctionRoom = () => {
                )}
                <div className="flex items-center gap-1 border-l border-white/10 pl-1.5 sm:pl-3">
                   <button
+                     onClick={() => setShowAnalyticsModal(true)}
+                     className="p-1 sm:px-2.5 sm:py-1.5 bg-orange-500/10 border border-orange-500/20 rounded-lg text-orange-400 text-[10px] compact:text-[9px] font-black uppercase tracking-widest hover:bg-orange-500/20 hover:text-orange-300 transition-all cursor-pointer flex items-center gap-1"
+                     title="Franchise Analytics & Live Standings"
+                  >
+                     <BarChart2 size={13} /> <span className="hidden md:inline">Analytics</span>
+                  </button>
+                  <button
                      onClick={() => setShowSettings(!showSettings)}
                      className={`p-1 sm:p-1.5 rounded-lg border transition-all cursor-pointer ${showSettings ? 'bg-white/10 border-white/20 text-white shadow-sm' : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'}`}
                      title="Local & Room Settings"
@@ -1336,6 +1349,13 @@ const AuctionRoom = () => {
                                           <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 mb-2 xl:mb-4">
                                              <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[8px] md:text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest">{currentPlayer.role}</span>
                                              <span className="bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] md:text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest">{currentPlayer.type}</span>
+                                             <button
+                                                onClick={() => setShowPlayerIntel(true)}
+                                                className="bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 text-orange-400 text-[8px] md:text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 transition-all cursor-pointer"
+                                                title="Open Tactical Scouting Dossier"
+                                             >
+                                                <Zap size={10} /> AI Scout
+                                             </button>
                                           </div>
                                           <h2 className="text-2xl sm:text-3xl xl:text-5xl font-black tracking-tight text-white leading-tight break-words">{currentPlayer.name}</h2>
                                        </div>
@@ -1910,6 +1930,22 @@ const AuctionRoom = () => {
                }
             }}
             onCancel={() => !isEnding && setShowEndConfirm(false)}
+         />
+
+         <PlayerIntelligenceModal
+            player={currentPlayer}
+            isOpen={showPlayerIntel}
+            onClose={() => setShowPlayerIntel(false)}
+            currentBid={displayAuctionState?.currentBid || 0}
+            teams={roomTeams || []}
+         />
+
+         <FranchiseAnalyticsModal
+            isOpen={showAnalyticsModal}
+            onClose={() => setShowAnalyticsModal(false)}
+            teams={roomTeams || []}
+            squadLimit={currentAuction?.squadLimit || currentAuction?.settings?.squadLimit || 25}
+            overseasLimit={currentAuction?.overseasLimit || currentAuction?.settings?.overseasLimit || 8}
          />
       </div>
    );

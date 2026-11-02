@@ -1,12 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { 
-  getFirestore, 
-  collection, 
-  getDocs, 
-  doc, 
-  getDoc,
-  setDoc, 
-  writeBatch 
+import {
+    getFirestore,
+    collection,
+    getDocs,
+    doc,
+    getDoc,
+    setDoc,
+    writeBatch
 } from "firebase/firestore";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import { IPL_PLAYERS } from "../src/data/players.js";
@@ -59,7 +59,7 @@ const firebaseConfig = {
     appId: process.env.VITE_FIREBASE_APP_ID
 };
 
-const CRICKET_API_KEY = process.env.CRICKET_API_KEY || process.env.VITE_CRICKET_API_KEY || "7a07fdbd-f72b-4f19-a950-f9e0f774317c";
+const CRICKET_API_KEY = process.env.CRICKET_API_KEY || process.env.VITE_CRICKET_API_KEY;
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -161,7 +161,7 @@ const calculatePoints = (stats, role) => {
         fieldingPts += (stumpings * 12);
         fieldingPts += (runoutsDirect * 12);
         fieldingPts += (runoutsIndirect * 6);
-        
+
         details.fielding = fieldingPts;
         points += fieldingPts;
     }
@@ -186,7 +186,7 @@ async function fetchFromAPI(endpoint) {
         if (data.reason?.toLowerCase().includes("hits today exceeded")) {
             console.error("\n[Fatal] API Rate Limit Exceeded (100 hits limit).");
             console.log("Matches processed in this run have been saved. Please run the script again tomorrow to continue backfilling.");
-            process.exit(0); 
+            process.exit(0);
         }
         throw new Error(`API Error: ${data.reason}`);
     }
@@ -203,11 +203,11 @@ async function backfill() {
         console.log("[Backfill] Finding IPL 2026 Series...");
         let iplSeries = null;
         let offset = 0;
-        
+
         while (!iplSeries && offset < 500) {
             const seriesList = await fetchFromAPI(`series?offset=${offset}`);
-            iplSeries = seriesList.find(s => 
-                s.name.toLowerCase().includes("indian premier league 2026") || 
+            iplSeries = seriesList.find(s =>
+                s.name.toLowerCase().includes("indian premier league 2026") ||
                 s.name.toLowerCase().includes("ipl 2026")
             );
             if (iplSeries || seriesList.length === 0) break;
@@ -227,7 +227,7 @@ async function backfill() {
             console.log("[Backfill] Sample match properties:", Object.keys(matches[0]));
             console.log("[Backfill] Sample match status:", matches[0].status, "Ended:", matches[0].matchEnded);
         }
-        
+
         // Try matchEnded or status containing "won"
         const finishedMatches = matches.filter(m => m.matchEnded || m.status?.toLowerCase().includes("won"));
 
@@ -247,12 +247,12 @@ async function backfill() {
             }
 
             console.log(`[Backfill] --> Processing Match: ${match.name} (${match.id})`);
-            
+
             const scorecard = await fetchFromAPI(`match_scorecard?id=${match.id}`);
             const info = await fetchFromAPI(`match_info?id=${match.id}`);
 
             const matchPlayers = {}; // name -> raw stats
-            
+
             // Map Lineups
             const announced = new Set();
             info.players?.forEach(p => announced.add(normalizeName(p.name)));
@@ -323,7 +323,7 @@ async function backfill() {
         for (const squadDoc of squadsSnap.docs) {
             const squad = squadDoc.data();
             const { userId, players, captain, viceCaptain, impactPlayer } = squad;
-            
+
             let totalGained = 0;
             players.forEach(pId => {
                 let pts = totalPlayerPoints[pId] || 0;

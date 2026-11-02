@@ -1,6 +1,7 @@
 import { IPL_PLAYERS } from '../data/players.js';
 import { evaluateBotBid } from './botEngine.js';
 import { toFiniteNumber } from './auctionDisplay.js';
+import { computeMinNextBid, validateBidRequest } from './auctionValidation.js';
 
 export const TEAMS = [
   { id: 'MI', name: 'Mumbai Indians', color: 'bg-blue-600' },
@@ -517,17 +518,27 @@ export function placeLocalBid(roomId, userId, teamId, userName, teamName) {
   if (!player) throw new Error('Current player not found');
 
   const cBid = room.live.currentBid || 0;
-  const inc = cBid < 5 ? 0.20 : 0.25;
-  const nextBid =
-    cBid === 0
-      ? toFiniteNumber(player.basePrice, 0)
-      : parseFloat((cBid + inc).toFixed(2));
+  const nextBid = computeMinNextBid(cBid, player.basePrice);
 
-  // Verify bidder budget
+  // Verify bidder budget and auction constraints via centralized validation
   const teamDocId = `${roomId}_${userId}`;
   const userTeam = room.teams ? room.teams[teamDocId] : null;
-  if (userTeam && userTeam.budgetRemaining !== undefined && userTeam.budgetRemaining < nextBid) {
-    throw new Error('Insufficient purse budget');
+  const squadLimit = room.settings?.squadLimit || 25;
+  const overseasLimit = room.settings?.overseasLimit || 8;
+
+  const validation = validateBidRequest({
+    bidAmount: nextBid,
+    bidderId: userId,
+    bidderTeamId: teamId,
+    player,
+    auctionLiveState: room.live,
+    bidderTeamState: userTeam || { budgetRemaining: 100, squad: [] },
+    squadLimit,
+    overseasLimit,
+  });
+
+  if (!validation.isValid) {
+    throw new Error(validation.error);
   }
 
   const timerSec = room.settings?.bidTimer || 10;
@@ -607,11 +618,10 @@ export function endLocalPlayerAuction(roomId) {
   const player = IPL_PLAYERS.find((p) => p.id === room.live.playerId);
   const teamDetails = TEAMS.find((t) => t.id === room.live.highBidderTeamId);
   const playerNameStr = player?.name || 'Player';
-  const logText = `${playerNameStr} ${
-    isSold
+  const logText = `${playerNameStr} ${isSold
       ? `SOLD to ${teamDetails?.name || room.live.highBidderName} for \u20b9${room.live.currentBid} Cr`
       : 'UNSOLD'
-  }`;
+    }`;
 
   if (isSold) {
     const winnerId = room.live.highBidderId;
@@ -658,12 +668,12 @@ export function endLocalPlayerAuction(roomId) {
     type: isSold ? 'sold_card' : 'log',
     metadata: isSold
       ? {
-          playerId: room.live.playerId,
-          teamId: room.live.highBidderTeamId,
-          bid: room.live.currentBid,
-          buyerId: room.live.highBidderId,
-          buyerName: room.live.highBidderName,
-        }
+        playerId: room.live.playerId,
+        teamId: room.live.highBidderTeamId,
+        bid: room.live.currentBid,
+        buyerId: room.live.highBidderId,
+        buyerName: room.live.highBidderName,
+      }
       : null,
     timestamp: Date.now(),
   });
@@ -707,7 +717,7 @@ export function endLocalPlayerAuction(roomId) {
         type: 'log',
         timestamp: Date.now(),
       });
-      flushLocalAuctionToSupabase(roomId).catch(() => {});
+      flushLocalAuctionToSupabase(roomId).catch(() => { });
     }
 
     writeLocalRoom(roomId, current);
@@ -827,7 +837,7 @@ export function endLocalAuction(roomId) {
   });
 
   writeLocalRoom(roomId, room);
-  flushLocalAuctionToSupabase(roomId).catch(() => {});
+  flushLocalAuctionToSupabase(roomId).catch(() => { });
 }
 
 /**
