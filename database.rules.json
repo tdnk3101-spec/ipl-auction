@@ -3,6 +3,7 @@
     ".read": false,
     ".write": false,
     "auctions": {
+      ".read": true,
       "$roomId": {
         ".read": "auth != null || data.child('room/isPublic').val() === true",
         

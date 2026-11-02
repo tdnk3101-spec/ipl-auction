@@ -165,13 +165,15 @@ export function getActiveServer() {
   return activeServer;
 }
 
-// No database is connected while the user is browsing the landing page,
-// public lobby or history. Only room entry calls goOnlineServer().
-try {
-  if (primaryRtdb) goOffline(primaryRtdb);
-  if (secondaryRtdb) goOffline(secondaryRtdb);
-} catch {
-  // Offline mode is a courtesy; the SDK reconnects automatically when asked.
+// Automatically ensure active RTDB connection is online and listeners sync when network restores
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    try {
+      if (rtdb) goOnline(rtdb);
+    } catch {
+      // Reconnect is best-effort; SDK handles transport retries
+    }
+  });
 }
 
 // ─── Per-server time sync ───
