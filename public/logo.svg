@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="grad-shield" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5722"/>
+      <stop offset="50%" stop-color="#FF9800"/>
+      <stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+    <linearGradient id="grad-ball" x1="20%" y1="20%" x2="80%" y2="80%">
+      <stop offset="0%" stop-color="#FF8A65"/>
+      <stop offset="100%" stop-color="#D84315"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Outer Hexagonal Emblem -->
+  <polygon points="50,6 90,28 90,72 50,94 10,72 10,28" 
+           fill="#0d1117" stroke="url(#grad-shield)" stroke-width="4" stroke-linejoin="round" />
+
+  <!-- Inner Cricket Seam Ball -->
+  <circle cx="50" cy="46" r="22" fill="url(#grad-ball)" filter="url(#glow)"/>
+  
+  <!-- Ball Seam Stitching -->
+  <path d="M 34,34 Q 50,46 34,58" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" fill="none" stroke-dasharray="2,2"/>
+  <path d="M 66,34 Q 50,46 66,58" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" fill="none" stroke-dasharray="2,2"/>
+
+  <!-- Auction Gavel Handle & Head Crossing -->
+  <g transform="translate(50,52) rotate(42) translate(-50,-52)">
+    <!-- Gavel Head -->
+    <rect x="42" y="32" width="16" height="12" rx="2" fill="#FFFFFF"/>
+    <rect x="40" y="30" width="20" height="3" rx="1" fill="#FFB74D"/>
+    <rect x="40" y="43" width="20" height="3" rx="1" fill="#FFB74D"/>
+    <!-- Handle -->
+    <rect x="48" y="44" width="4" height="28" rx="2" fill="#E0E0E0"/>
+    <rect x="47" y="66" width="6" height="6" rx="1" fill="#FF9800"/>
+  </g>
+
+  <!-- Golden Crown Star -->
+  <polygon points="50,14 53,21 60,21 54,25 56,32 50,28 44,32 46,25 40,21 47,21" fill="#FFD54F"/>
+</svg>
+
