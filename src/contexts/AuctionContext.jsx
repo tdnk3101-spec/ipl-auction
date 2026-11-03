@@ -276,6 +276,7 @@ export const AuctionProvider = ({ children }) => {
         });
       }
     } catch (rtdbErr) {
+      console.error('[auction] RTDB room initialization failed:', rtdbErr);
       // Do not leave a half-created room behind on the failed server.
       try {
         await remove(ref(rtdb, `auctions/${roomId}`));
@@ -283,7 +284,12 @@ export const AuctionProvider = ({ children }) => {
         // Best effort cleanup.
       }
       goOfflineServer(actualServer);
-      throw rtdbErr;
+      const rawErr = rtdbErr?.message || '';
+      const safeMsg =
+        rawErr && rawErr !== 'set' && !rawErr.startsWith('set at') && !rawErr.startsWith('set failed')
+          ? rawErr
+          : 'Could not initialize auction room in database. Please check your connection and try again.';
+      throw new Error(safeMsg);
     }
 
     // Write to Supabase (shared directory for both RTDBs, 0 Firestore cost).

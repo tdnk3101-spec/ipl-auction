@@ -76,7 +76,19 @@ const LandingPage = () => {
   const [isPublicRoom, setIsPublicRoom] = useState(true);
   const [roomCode, setRoomCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [error, _setError] = useState("");
+  const setError = useCallback((val) => {
+    if (!val) {
+      _setError("");
+      return;
+    }
+    const str = typeof val === "string" ? val : (val?.message || String(val));
+    if (str === "set" || str.startsWith("set at") || str.startsWith("set failed")) {
+      _setError("Could not create auction room. Please try again.");
+    } else {
+      _setError(str);
+    }
+  }, []);
   const [authConfigMissing, setAuthConfigMissing] = useState(false);
   const [notice, setNotice] = useState("");
 
