@@ -4,6 +4,7 @@ import { TEAM_SLOGANS } from '../data/slogans';
 import confetti from 'canvas-confetti';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuction } from '../contexts/AuctionContext';
+import UpcomingSetSelectorModal from '../components/UpcomingSetSelectorModal';
 import { useAuth } from '../contexts/AuthContext';
 import { IPL_PLAYERS } from '../data/players';
 import {
@@ -18,6 +19,7 @@ import {
    Copy,
    MessageSquare,
    Settings as SettingsIcon,
+   Layers,
    Home,
    Pause,
    XCircle,
@@ -84,6 +86,8 @@ const AuctionRoom = () => {
       pauseAuction,
       resumeAuction,
       endAuction,
+      destroyAbandonedAuction,
+      setUpcomingSet,
       messages,
       updateRoomSettings,
       kickPlayer,
@@ -104,6 +108,53 @@ const AuctionRoom = () => {
    const [showPlayerIntel, setShowPlayerIntel] = useState(false);
    const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
    const [showParticipantsOverlay, setShowParticipantsOverlay] = useState(false);
+   const [showUpcomingSetModal, setShowUpcomingSetModal] = useState(false);
+   const [isReorderingSet, setIsReorderingSet] = useState(false);
+   const zeroBidPassCountRef = useRef(0);
+
+   const otherHumanParticipants = useMemo(() => {
+      return (currentAuction?.players || []).filter(p => !p.isBot && p.id !== user?.uid);
+   }, [currentAuction?.players, user?.uid]);
+
+   const remainingSets = useMemo(() => {
+      if (!playerCategories?.upcoming) return [];
+      const setMap = new Map();
+      playerCategories.upcoming.forEach(p => {
+         const sName = p.set || 'General Pool';
+         if (!setMap.has(sName)) {
+            setMap.set(sName, { setName: sName, count: 0, samplePlayers: [] });
+         }
+         const entry = setMap.get(sName);
+         entry.count += 1;
+         if (entry.samplePlayers.length < 3) {
+            entry.samplePlayers.push(p.name);
+         }
+      });
+      return Array.from(setMap.values());
+   }, [playerCategories?.upcoming]);
+
+   const handleSelectUpcomingSet = async (setName) => {
+      if (!id || !setName) return;
+      setIsReorderingSet(true);
+      try {
+         await setUpcomingSet(id, setName);
+      } catch (err) {
+         console.error('Failed to change upcoming set:', err);
+         setError(err?.message || 'Failed to update upcoming set order');
+         setTimeout(() => setError(''), 4000);
+      } finally {
+         setIsReorderingSet(false);
+      }
+   };
+
+   const handleExitRoom = async () => {
+      if (isAdmin && currentAuction?.status === 'active') {
+         if (otherHumanParticipants.length === 0) {
+            await destroyAbandonedAuction(id, 'Host exited with no active participants.');
+         }
+      }
+      navigate('/');
+   };
    const [showEndConfirm, setShowEndConfirm] = useState(false);
    const [isEnding, setIsEnding] = useState(false);
    const [sidebarTab, setSidebarTab] = useState('activity'); // activity or chat
@@ -754,6 +805,19 @@ const AuctionRoom = () => {
             if (shouldTrigger) {
                endTriggeredRef.current = true;
                clearInterval(interval);
+               // Auto-destruction check: if player has 0 bids and no other human managers participate
+               if (displayAuctionState?.currentBid === 0 && otherHumanParticipants.length === 0) {
+                  zeroBidPassCountRef.current += 1;
+                  if (zeroBidPassCountRef.current >= 3 && isAdmin) {
+                     destroyAbandonedAuction(id, 'No participants joined or placed bids.');
+                     alert('This auction arena was automatically destroyed because no participants were active.');
+                     navigate('/');
+                     return;
+                  }
+               } else if (displayAuctionState?.currentBid > 0) {
+                  zeroBidPassCountRef.current = 0;
+               }
+
                setTimeout(() => {
                   endPlayerAuction(id);
                }, 300);
@@ -1068,7 +1132,7 @@ const AuctionRoom = () => {
                   >
                      <SettingsIcon size={14} />
                   </button>
-                  <button onClick={() => navigate('/')} className="p-1 sm:p-1.5 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer" title="Back to Home"><Home size={14} /></button>
+                  <button onClick={handleExitRoom} className="p-1 sm:p-1.5 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer" title="Back to Home"><Home size={14} /></button>
                </div>
             </div>
          </header>
@@ -1946,6 +2010,15 @@ const AuctionRoom = () => {
             teams={roomTeams || []}
             squadLimit={currentAuction?.squadLimit || currentAuction?.settings?.squadLimit || 25}
             overseasLimit={currentAuction?.overseasLimit || currentAuction?.settings?.overseasLimit || 8}
+         />
+
+         <UpcomingSetSelectorModal
+            isOpen={showUpcomingSetModal}
+            onClose={() => setShowUpcomingSetModal(false)}
+            remainingSets={remainingSets}
+            currentSetName={currentPlayer?.set || ''}
+            onSelectSet={handleSelectUpcomingSet}
+            loading={isReorderingSet}
          />
       </div>
    );

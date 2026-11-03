@@ -159,6 +159,28 @@ const LandingPage = () => {
       if (r.isPublic === false) return;
       if (r.status !== "waiting" && r.status !== "active") return;
 
+      const presences = data?.presence || {};
+      const onlineUsers = Object.values(presences).filter((p) => p && p.online === true);
+      const isHostOnline = r.hostId ? presences[r.hostId]?.online === true : false;
+      const totalOnline = onlineUsers.length;
+
+      // Clean up & hide empty / abandoned rooms:
+      // If 0 users are online, the room is abandoned and should be removed from RTDB and not shown
+      if (totalOnline === 0) {
+        if (rtdb && roomId) {
+          remove(ref(rtdb, `auctions/${roomId}`)).catch(() => {});
+        }
+        return;
+      }
+
+      // If active auction but host left/offline and no active participants remain:
+      if (r.status === "active" && !isHostOnline && totalOnline <= 1) {
+        if (rtdb && roomId) {
+          remove(ref(rtdb, `auctions/${roomId}`)).catch(() => {});
+        }
+        return;
+      }
+
       const players = r.players || [];
       const uniquePlayers = [];
       const seenIds = new Set();

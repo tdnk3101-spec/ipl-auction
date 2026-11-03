@@ -840,6 +840,15 @@ export function endLocalAuction(roomId) {
   flushLocalAuctionToSupabase(roomId).catch(() => { });
 }
 
+export function setLocalUpcomingSet(roomId, hostUserId, newPlayerOrder) {
+  const room = readLocalRoom(roomId);
+  if (!room) return;
+  room.playerOrder = newPlayerOrder;
+  if (room.room) room.room.playerOrder = newPlayerOrder;
+  writeLocalRoom(roomId, room);
+  return room;
+}
+
 /**
  * Send chat message in local auction.
  */

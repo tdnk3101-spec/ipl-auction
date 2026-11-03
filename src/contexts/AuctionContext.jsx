@@ -71,6 +71,7 @@ import {
   sendLocalMessage as sendLocalMessageEngine,
   kickLocalPlayer as kickLocalPlayerEngine,
   updateLocalRoomSettings as updateLocalRoomSettingsEngine,
+  setLocalUpcomingSet as setLocalUpcomingSetEngine,
   setSupabaseClient,
 } from '../lib/localAuctionEngine';
 
@@ -1263,6 +1264,14 @@ export const AuctionProvider = ({ children }) => {
       // otherwise the peer-elected presence mirror handles offline transitions.
       if (currentRoomData && currentRoomData.hostId === userId) {
         syncHostOnline(false);
+        const otherHumans = (currentRoomData.players || []).filter(p => p.id !== userId && !p.isBot);
+        if (otherHumans.length === 0) {
+          // Solitary host unmounted/exited: auto-destroy from RTDB and mark cancelled in Supabase
+          remove(ref(rtdb, `auctions/${auctionId}`)).catch(() => {});
+          if (supabase) {
+            supabase.from('auctions').update({ status: 'cancelled' }).eq('id', auctionId).catch(() => {});
+          }
+        }
       }
 
       setCurrentAuction(null);
@@ -1498,6 +1507,106 @@ export const AuctionProvider = ({ children }) => {
       }
     }, 5000);
   }, [user, currentAuction, flushAuctionToFirestore]);
+
+  const destroyAbandonedAuction = useCallback(async (roomId, reason = 'No participants active in this arena.') => {
+    if (!roomId) return;
+    try {
+      if (isHotspotRoomCode(roomId) || currentAuction?.server === 'local') {
+        endLocalAuctionEngine(roomId);
+        return;
+      }
+
+      await push(ref(rtdb, `auctions/${roomId}/messages`), {
+        userId: 'system',
+        userName: 'System',
+        text: `⚠️ Auction arena automatically destroyed: ${reason}`,
+        type: 'log',
+        timestamp: Date.now()
+      }).catch(() => {});
+
+      await updateRtdb(ref(rtdb, `auctions/${roomId}/room`), { status: 'cancelled' }).catch(() => {});
+      await remove(ref(rtdb, `auctions/${roomId}`)).catch(() => {});
+
+      if (supabase) {
+        await supabase.from('auctions').update({ status: 'cancelled' }).eq('id', roomId).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[auction] Failed to destroy abandoned room', err);
+    }
+  }, [currentAuction]);
+
+  const setUpcomingSet = useCallback(async (roomId, setName) => {
+    if (!roomId || !setName) return;
+    const isHost = currentAuction?.hostId === user?.uid || (currentAuction?.players || []).some(p => p.id === user?.uid && p.isHost);
+    if (!isHost) {
+      throw new Error('Only the auction host can change the upcoming set.');
+    }
+
+    const currentOrder = currentAuction?.playerOrder || Array.from({ length: IPL_PLAYERS.length }, (_, i) => i);
+    const currentPlayerId = currentAuction?.currentAuction?.playerId;
+    const currentGlobalIndex = IPL_PLAYERS.findIndex(p => p.id === currentPlayerId);
+
+    // Identify sold players across all rosters
+    const soldPlayerIds = new Set();
+    (roomTeams || []).forEach(t => {
+      (t.squad || []).forEach(p => {
+        const pid = typeof p === 'object' ? p.id : p;
+        if (pid) soldPlayerIds.add(pid);
+      });
+    });
+
+    const currentPosInOrder = currentOrder.indexOf(currentGlobalIndex);
+    const alreadyPassed = currentPosInOrder >= 0
+      ? new Set(currentOrder.slice(0, currentPosInOrder + 1))
+      : new Set();
+    if (currentGlobalIndex >= 0) alreadyPassed.add(currentGlobalIndex);
+
+    const selectedSetIndices = [];
+    const otherRemainingIndices = [];
+
+    currentOrder.forEach((idx) => {
+      if (alreadyPassed.has(idx)) return;
+      const player = IPL_PLAYERS[idx];
+      if (!player || soldPlayerIds.has(player.id)) return;
+
+      if (player.set === setName) {
+        selectedSetIndices.push(idx);
+      } else {
+        otherRemainingIndices.push(idx);
+      }
+    });
+
+    if (selectedSetIndices.length === 0) {
+      throw new Error(`No remaining players found in set: ${setName}`);
+    }
+
+    const passedSlice = currentPosInOrder >= 0
+      ? currentOrder.slice(0, currentPosInOrder + 1)
+      : (currentGlobalIndex >= 0 ? [currentGlobalIndex] : []);
+    const newPlayerOrder = [...passedSlice, ...selectedSetIndices, ...otherRemainingIndices];
+
+    if (currentAuction?.server === 'local' || isHotspotRoomCode(roomId)) {
+      setLocalUpcomingSetEngine(roomId, user?.uid, newPlayerOrder);
+      return newPlayerOrder;
+    }
+
+    await updateRtdb(ref(rtdb, `auctions/${roomId}/room`), { playerOrder: newPlayerOrder });
+    try {
+      await set(ref(rtdb, `auctions/${roomId}/playerOrder`), newPlayerOrder);
+    } catch {}
+
+    const msgRef = push(ref(rtdb, `auctions/${roomId}/messages`));
+    await set(msgRef, {
+      id: msgRef.key,
+      userId: user?.uid || 'host',
+      userName: user?.displayName || 'Host',
+      text: `⚡ Host set upcoming auction set to: ${setName} (${selectedSetIndices.length} players)`,
+      type: 'log',
+      timestamp: Date.now()
+    }).catch(() => {});
+
+    return newPlayerOrder;
+  }, [currentAuction, user, roomTeams]);
 
 
 
@@ -1783,6 +1892,8 @@ export const AuctionProvider = ({ children }) => {
     pauseAuction,
     resumeAuction,
     endAuction,
+    destroyAbandonedAuction,
+    setUpcomingSet,
     sendMessage,
     messages,
     addBotTeam,
