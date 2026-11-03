@@ -163,10 +163,11 @@ const LandingPage = () => {
       const onlineUsers = Object.values(presences).filter((p) => p && p.online === true);
       const isHostOnline = r.hostId ? presences[r.hostId]?.online === true : false;
       const totalOnline = onlineUsers.length;
+      const roomAgeMs = Date.now() - (r.createdAt || 0);
+      const isNewRoom = roomAgeMs < 45000; // room created in the last 45 seconds is never treated as abandoned
 
-      // Clean up & hide empty / abandoned rooms:
-      // If 0 users are online, the room is abandoned and should be removed from RTDB and not shown
-      if (totalOnline === 0) {
+      // Clean up & hide empty / abandoned rooms (only if room is not brand new):
+      if (!isNewRoom && totalOnline === 0) {
         if (rtdb && roomId) {
           remove(ref(rtdb, `auctions/${roomId}`)).catch(() => {});
         }
@@ -174,7 +175,7 @@ const LandingPage = () => {
       }
 
       // If active auction but host left/offline and no active participants remain:
-      if (r.status === "active" && !isHostOnline && totalOnline <= 1) {
+      if (!isNewRoom && r.status === "active" && !isHostOnline && totalOnline <= 1) {
         if (rtdb && roomId) {
           remove(ref(rtdb, `auctions/${roomId}`)).catch(() => {});
         }
@@ -645,7 +646,12 @@ const LandingPage = () => {
       // The landing page must stay browse-only; the room page will reconnect.
       goOfflineServer(getActiveServer());
       setError(
-        error.message || "Failed to create/join room. Please try again.",
+        (() => {
+        const raw = error?.message || "";
+        return raw && raw !== "set" && !raw.startsWith("set at")
+          ? raw
+          : "Failed to create/join room. Please try again.";
+      })(),
       );
       setTimeout(() => setError(""), 3000);
       setIsSubmitting(false);

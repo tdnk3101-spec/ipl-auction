@@ -221,6 +221,7 @@ export const AuctionProvider = ({ children }) => {
       squadLimit,
       overseasLimit,
       server: actualServer,
+      createdAt: Date.now(),
       players: [{
         id: userId,
         name: playerDetails.name,
