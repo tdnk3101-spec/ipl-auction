@@ -116,45 +116,6 @@ const AuctionRoom = () => {
       return (currentAuction?.players || []).filter(p => !p.isBot && p.id !== user?.uid);
    }, [currentAuction?.players, user?.uid]);
 
-   const remainingSets = useMemo(() => {
-      if (!playerCategories?.upcoming) return [];
-      const setMap = new Map();
-      playerCategories.upcoming.forEach(p => {
-         const sName = p.set || 'General Pool';
-         if (!setMap.has(sName)) {
-            setMap.set(sName, { setName: sName, count: 0, samplePlayers: [] });
-         }
-         const entry = setMap.get(sName);
-         entry.count += 1;
-         if (entry.samplePlayers.length < 3) {
-            entry.samplePlayers.push(p.name);
-         }
-      });
-      return Array.from(setMap.values());
-   }, [playerCategories?.upcoming]);
-
-   const handleSelectUpcomingSet = async (setName) => {
-      if (!id || !setName) return;
-      setIsReorderingSet(true);
-      try {
-         await setUpcomingSet(id, setName);
-      } catch (err) {
-         console.error('Failed to change upcoming set:', err);
-         setError(err?.message || 'Failed to update upcoming set order');
-         setTimeout(() => setError(''), 4000);
-      } finally {
-         setIsReorderingSet(false);
-      }
-   };
-
-   const handleExitRoom = async () => {
-      if (isAdmin && currentAuction?.status === 'active') {
-         if (otherHumanParticipants.length === 0) {
-            await destroyAbandonedAuction(id, 'Host exited with no active participants.');
-         }
-      }
-      navigate('/');
-   };
    const [showEndConfirm, setShowEndConfirm] = useState(false);
    const [isEnding, setIsEnding] = useState(false);
    const [sidebarTab, setSidebarTab] = useState('activity'); // activity or chat
@@ -522,6 +483,47 @@ const AuctionRoom = () => {
 
       return { upcoming, sold, unsold };
    }, [currentAuction?.playerOrder, displayAuctionState?.playerId, roomTeams]);
+
+   const remainingSets = useMemo(() => {
+      if (!playerCategories?.upcoming) return [];
+      const setMap = new Map();
+      playerCategories.upcoming.forEach(p => {
+         const sName = p.set || 'General Pool';
+         if (!setMap.has(sName)) {
+            setMap.set(sName, { setName: sName, count: 0, samplePlayers: [] });
+         }
+         const entry = setMap.get(sName);
+         entry.count += 1;
+         if (entry.samplePlayers.length < 3) {
+            entry.samplePlayers.push(p.name);
+         }
+      });
+      return Array.from(setMap.values());
+   }, [playerCategories?.upcoming]);
+
+   const handleSelectUpcomingSet = async (setName) => {
+      if (!id || !setName) return;
+      setIsReorderingSet(true);
+      try {
+         await setUpcomingSet(id, setName);
+      } catch (err) {
+         console.error('Failed to change upcoming set:', err);
+         setError(err?.message || 'Failed to update upcoming set order');
+         setTimeout(() => setError(''), 4000);
+      } finally {
+         setIsReorderingSet(false);
+      }
+   };
+
+   const handleExitRoom = async () => {
+      if (isAdmin && currentAuction?.status === 'active') {
+         if (otherHumanParticipants.length === 0) {
+            await destroyAbandonedAuction(id, 'Host exited with no active participants.');
+         }
+      }
+      navigate('/');
+   };
+
 
    const filteredPlayers = useMemo(() => {
       let players = [];
