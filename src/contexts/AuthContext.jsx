@@ -25,6 +25,9 @@ const AuthContext = createContext({
 });
 
 const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -93,10 +96,20 @@ export const AuthProvider = ({ children }) => {
 
   const loginWithGoogle = async () => {
     if (!auth) throw new Error('Firebase Auth is not initialized');
-    const result = await signInWithPopup(auth, googleProvider);
-    sessionStorage.removeItem('ipl_local_guest');
-    setUser(result.user);
-    return result.user;
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      sessionStorage.removeItem('ipl_local_guest');
+      setUser(result.user);
+      return result.user;
+    } catch (popupErr) {
+      if (popupErr?.code === 'auth/popup-closed-by-user') {
+        throw new Error('Sign-in cancelled. Please complete the Google sign-in window.');
+      }
+      if (popupErr?.code === 'auth/popup-blocked') {
+        throw new Error('Sign-in popup was blocked by your browser. Please allow popups for this site.');
+      }
+      throw popupErr;
+    }
   };
 
   const loginAsGuest = async (displayName) => {
@@ -110,7 +123,11 @@ export const AuthProvider = ({ children }) => {
         setUser(updatedUser);
         return updatedUser;
       } catch (authErr) {
-        console.warn('[auth] Firebase anonymous sign-in unavailable, using local guest session:', authErr.message);
+        if (authErr?.code === 'auth/admin-restricted-operation') {
+          console.info('[auth] Anonymous authentication is disabled in Firebase Console. Using local guest session.');
+        } else {
+          console.warn('[auth] Firebase anonymous sign-in unavailable, using local guest session:', authErr.message);
+        }
       }
     }
     // Fallback local guest session (always succeeds even if Firebase Auth is not yet activated)

@@ -126,6 +126,7 @@ const AuctionRoom = () => {
    const [optimisticState, setOptimisticState] = useState(null);
    const [joiningTeam, setJoiningTeam] = useState(null);
    const [banError, setBanError] = useState(null);
+   const [roomNotFoundError, setRoomNotFoundError] = useState(null);
    const [isBiddingInFlight, setIsBiddingInFlight] = useState(false);
    const [spectateMode, setSpectateMode] = useState(() => {
       const params = new URLSearchParams(window.location.search);
@@ -562,6 +563,8 @@ const AuctionRoom = () => {
          } catch (e) {
             if (e?.message?.includes("kicked")) {
                setBanError(e.message);
+            } else if (e?.message?.toLowerCase().includes("not found") || e?.message?.toLowerCase().includes("ended")) {
+               setRoomNotFoundError(e.message || "This auction room does not exist, has expired, or was closed.");
             } else {
                // Non-blocking: the live subscription still connects the user.
                console.warn('[auction] Auto-join failed', e);
@@ -919,10 +922,42 @@ const AuctionRoom = () => {
 
                <button
                   onClick={() => navigate('/')}
-                  className="w-full py-6 bg-white text-black font-black uppercase tracking-widest rounded-[2rem] hover:bg-gray-100 transition-all active:scale-95 flex items-center justify-center gap-3"
+                  className="w-full py-6 bg-white text-black font-black uppercase tracking-widest rounded-[2rem] hover:bg-gray-100 transition-all active:scale-95 flex items-center justify-center gap-3 cursor-pointer"
                >
                   <Home size={20} />
                   BACK TO HOME
+               </button>
+            </motion.div>
+         </div>
+      );
+   }
+
+   if (roomNotFoundError) {
+      return (
+         <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 font-primary text-white">
+            <motion.div
+               initial={{ opacity: 0, scale: 0.9 }}
+               animate={{ opacity: 1, scale: 1 }}
+               className="max-w-md w-full bg-white/5 border border-white/10 p-12 rounded-[3.5rem] text-center backdrop-blur-3xl relative overflow-hidden"
+            >
+               <div className="absolute top-0 right-0 p-8 w-32 h-32 bg-orange-500/10 rounded-full -mr-16 -mt-16 blur-3xl" />
+               <div className="absolute bottom-0 left-0 p-8 w-32 h-32 bg-orange-500/10 rounded-full -ml-16 -mb-16 blur-3xl" />
+
+               <div className="w-24 h-24 bg-orange-500/10 border border-orange-500/20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-2xl shadow-orange-500/20 relative group">
+                  <ShieldAlert size={48} className="text-orange-500 group-hover:scale-110 transition-transform duration-500" />
+               </div>
+
+               <h1 className="text-3xl font-black mb-4 uppercase tracking-tighter text-orange-500">ROOM NOT FOUND</h1>
+               <p className="text-gray-400 font-bold text-xs leading-relaxed uppercase tracking-widest mb-10 opacity-70">
+                  {roomNotFoundError}
+               </p>
+
+               <button
+                  onClick={() => navigate('/')}
+                  className="w-full py-5 bg-white text-black font-black uppercase tracking-widest rounded-[2rem] hover:bg-gray-100 transition-all active:scale-95 flex items-center justify-center gap-3 cursor-pointer"
+               >
+                  <Home size={18} />
+                  RETURN TO HOME
                </button>
             </motion.div>
          </div>
