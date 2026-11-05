@@ -63,11 +63,10 @@ export default function FranchiseAnalyticsModal({
                 <button
                   key={t.teamId}
                   onClick={() => setSelectedTeamId(t.teamId)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-                    isSelected
-                      ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20'
-                      : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
-                  }`}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${isSelected
+                    ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20'
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                    }`}
                 >
                   {t.teamId}
                 </button>
@@ -120,11 +119,11 @@ export default function FranchiseAnalyticsModal({
                   <Award size={12} className="text-orange-400" /> Squad Grade
                 </span>
                 <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-black text-orange-400">{analysis.rating || 'B'}</span>
-                  <span className="text-xs text-gray-400 font-semibold">{squad.length}/{squadLimit} Formed</span>
+                  <span className="text-2xl font-black text-orange-400">{analysis.grade}</span>
+                  <span className="text-xs text-gray-400 font-semibold">{analysis.score}/100</span>
                 </div>
                 <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                  Reserve Floor: Protected
+                  Reserve Safety: {analysis.reserveCompliance ? 'Safe' : 'At Risk'}
                 </p>
               </div>
             </div>
@@ -136,10 +135,10 @@ export default function FranchiseAnalyticsModal({
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: 'Batsmen', count: analysis.roleCounts?.['Batsman'] || 0, color: 'text-amber-400' },
-                  { label: 'Bowlers', count: analysis.roleCounts?.['Bowler'] || 0, color: 'text-blue-400' },
-                  { label: 'All-Rounders', count: analysis.roleCounts?.['All-Rounder'] || 0, color: 'text-green-400' },
-                  { label: 'Wicketkeepers', count: analysis.roleCounts?.['Wicketkeeper'] || 0, color: 'text-purple-400' },
+                  { label: 'Batsmen', count: analysis.breakdown?.Batsman || 0, color: 'text-amber-400' },
+                  { label: 'Bowlers', count: analysis.breakdown?.Bowler || 0, color: 'text-blue-400' },
+                  { label: 'All-Rounders', count: analysis.breakdown?.['All-Rounder'] || 0, color: 'text-green-400' },
+                  { label: 'Wicketkeepers', count: analysis.breakdown?.Wicketkeeper || 0, color: 'text-purple-400' },
                 ].map((pos) => (
                   <div key={pos.label} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl">
                     <p className="text-[10px] text-gray-400 uppercase font-bold">{pos.label}</p>
@@ -155,15 +154,15 @@ export default function FranchiseAnalyticsModal({
                 <ShieldAlert size={14} /> Strategic Roster Assessment
               </h4>
               <p className="text-xs text-gray-300 leading-relaxed">
-                Philosophy: <span className="text-white font-semibold">{profile.name || currentTeam.teamName}</span> -{' '}
-                <span className="text-orange-400 font-medium">{analysis.philosophy || profile.philosophy || 'Balanced competitive strategy'}</span>.
+                Philosophy: <span className="text-white font-semibold">{profile.name || currentTeam.teamName}</span> employs a{' '}
+                <span className="text-orange-400 font-medium">{profile.description || 'balanced competitive strategy'}</span>.
               </p>
-              {analysis.feedback && analysis.feedback.length > 0 && (
+              {analysis.weaknesses && analysis.weaknesses.length > 0 && (
                 <div className="space-y-1.5 pt-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Scouting Notes:</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Target Deficits:</span>
                   <ul className="list-disc list-inside text-xs text-gray-400 space-y-1">
-                    {analysis.feedback.map((item, idx) => (
-                      <li key={idx}>{item}</li>
+                    {analysis.weaknesses.map((w, idx) => (
+                      <li key={idx}>{w}</li>
                     ))}
                   </ul>
                 </div>
