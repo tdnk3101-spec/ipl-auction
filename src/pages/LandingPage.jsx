@@ -178,19 +178,13 @@ const LandingPage = () => {
       const roomAgeMs = Date.now() - (r.createdAt || 0);
       const isNewRoom = roomAgeMs < 45000; // room created in the last 45 seconds is never treated as abandoned
 
-      // Clean up & hide empty / abandoned rooms (only if room is not brand new):
+      // Hide empty/offline rooms from public directory without destroying active database records
       if (!isNewRoom && totalOnline === 0) {
-        if (rtdb && roomId) {
-          remove(ref(rtdb, `auctions/${roomId}`)).catch(() => {});
-        }
         return;
       }
 
       // If active auction but host left/offline and no active participants remain:
       if (!isNewRoom && r.status === "active" && !isHostOnline && totalOnline <= 1) {
-        if (rtdb && roomId) {
-          remove(ref(rtdb, `auctions/${roomId}`)).catch(() => {});
-        }
         return;
       }
 

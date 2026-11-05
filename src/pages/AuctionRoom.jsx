@@ -126,7 +126,6 @@ const AuctionRoom = () => {
    const [optimisticState, setOptimisticState] = useState(null);
    const [joiningTeam, setJoiningTeam] = useState(null);
    const [banError, setBanError] = useState(null);
-   const [roomNotFoundError, setRoomNotFoundError] = useState(null);
    const [isBiddingInFlight, setIsBiddingInFlight] = useState(false);
    const [spectateMode, setSpectateMode] = useState(() => {
       const params = new URLSearchParams(window.location.search);
@@ -563,11 +562,9 @@ const AuctionRoom = () => {
          } catch (e) {
             if (e?.message?.includes("kicked")) {
                setBanError(e.message);
-            } else if (e?.message?.toLowerCase().includes("not found") || e?.message?.toLowerCase().includes("ended")) {
-               setRoomNotFoundError(e.message || "This auction room does not exist, has expired, or was closed.");
             } else {
                // Non-blocking: the live subscription still connects the user.
-               console.warn('[auction] Auto-join failed', e);
+               console.warn('[auction] Auto-join warning:', e);
             }
          }
       };
@@ -932,7 +929,17 @@ const AuctionRoom = () => {
       );
    }
 
-   if (roomNotFoundError) {
+   if (!user && !loading) {
+      return <PageLoader />;
+   }
+
+   if (!serverReady || loading) {
+      return (
+         <PageLoader />
+      );
+   }
+
+   if (!currentAuction) {
       return (
          <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 font-primary text-white">
             <motion.div
@@ -949,7 +956,7 @@ const AuctionRoom = () => {
 
                <h1 className="text-3xl font-black mb-4 uppercase tracking-tighter text-orange-500">ROOM NOT FOUND</h1>
                <p className="text-gray-400 font-bold text-xs leading-relaxed uppercase tracking-widest mb-10 opacity-70">
-                  {roomNotFoundError}
+                  This auction room does not exist, has expired, or was closed by the host.
                </p>
 
                <button
@@ -961,16 +968,6 @@ const AuctionRoom = () => {
                </button>
             </motion.div>
          </div>
-      );
-   }
-
-   if (!user && !loading) {
-      return <PageLoader />;
-   }
-
-   if (!serverReady || loading) {
-      return (
-         <PageLoader />
       );
    }
 

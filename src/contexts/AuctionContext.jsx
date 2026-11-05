@@ -1266,19 +1266,9 @@ export const AuctionProvider = ({ children }) => {
       // Set offline on component unmount
       set(myPresenceRef, { online: false, lastSeen: serverTimestampRtdb() });
 
-      // Mark the room offline in the directory when the HOST leaves. This is the
-      // only writer for the "lone host leaves / no peers left to mirror" case;
-      // otherwise the peer-elected presence mirror handles offline transitions.
+      // Mark the room offline in the directory when the HOST unmounts
       if (currentRoomData && currentRoomData.hostId === userId) {
         syncHostOnline(false);
-        const otherHumans = (currentRoomData.players || []).filter(p => p.id !== userId && !p.isBot);
-        if (otherHumans.length === 0) {
-          // Solitary host unmounted/exited: auto-destroy from RTDB and mark cancelled in Supabase
-          remove(ref(rtdb, `auctions/${auctionId}`)).catch(() => {});
-          if (supabase) {
-            supabase.from('auctions').update({ status: 'cancelled' }).eq('id', auctionId).catch(() => {});
-          }
-        }
       }
 
       setCurrentAuction(null);
